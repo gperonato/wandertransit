@@ -1,0 +1,17 @@
+# GTFS feeds (large, auto-downloaded)
+gtfs/
+
+# Python artifacts
+__pycache__/
+.pytest_cache
+*.pyc
+.venv/
+
+# Overpass peak name cache
+docs/gpx/.peak_cache.json
+
+# Raw GPX files and build intermediates
+*.geojson
+*.json
+*.csv
+gpx/*

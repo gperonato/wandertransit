@@ -1,0 +1,84 @@
+name: Build, Test & Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: pip install -r requirements.txt
+  
+    - name: Build isochrones & destinations
+      env:
+        GTFS_AT7_ID: ${{ secrets.GTFS_AT7_ID }}
+        GTFS_AT5_ID: ${{ secrets.GTFS_AT5_ID }}
+      run: |
+        make destinations isochrones
+
+    - name: Run tests
+      run: |
+        set -e
+        make test-all
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-output
+        path: docs/
+        retention-days: 7
+    
+  deploy:
+    needs: build-test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Download build artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: build-output
+        path: docs/
+    
+    - name: Setup Pages
+      uses: actions/configure-pages@v4
+    
+    - name: Upload Pages artifact
+      uses: actions/upload-pages-artifact@v4
+      with:
+        path: 'docs/'
+    
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4

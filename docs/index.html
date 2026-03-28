@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WanderTransit · Hiking by Public Transport</title>
+
+  <link href="https://unpkg.com/maplibre-gl@4.1.0/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@4.1.0/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f1117; color: #e8eaf0;
+      height: 100dvh; display: flex; flex-direction: column;
+    }
+
+    header {
+      padding: 9px 16px; background: #13161f;
+      border-bottom: 1px solid #222535;
+      display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0; gap: 12px;
+    }
+    header h1 { font-size: 14px; font-weight: 700; color: #fff; white-space: nowrap; letter-spacing: -0.01em; }
+    header p  { font-size: 11px; color: #6b6f85; margin-top: 2px; }
+
+    /* ── Filter toggle button in header ── */
+    #filter-btn {
+      font-size: 11px; font-weight: 600; padding: 5px 11px;
+      border-radius: 8px; border: 1px solid #2a2d3a;
+      background: #1c1f2e; color: #8b8fa8; cursor: pointer;
+      white-space: nowrap; transition: all 0.12s; flex-shrink: 0;
+    }
+    #filter-btn.active { background: #1e2a45; border-color: #3b4fa0; color: #a5b4fc; }
+
+    #map { flex: 1; cursor: crosshair; }
+
+    /* ── Panel ── */
+    #panel {
+      position: absolute; top: 70px; right: 10px; bottom: 50px; width: 272px;
+      background: #13161fee; backdrop-filter: blur(12px);
+      border: 1px solid #222535; border-radius: 12px;
+      padding: 14px; z-index: 10;
+      max-height: calc(100dvh - 72px); overflow-y: auto;
+      scrollbar-width: thin; scrollbar-color: #2a2d3a transparent;
+    }
+    #panel h2 {
+      font-size: 10px; font-weight: 700; color: #6b6f85;
+      text-transform: uppercase; letter-spacing: 0.09em; margin-bottom: 3px;
+    }
+    #panel-subtitle { font-size: 11px; color: #6b6f85; margin-bottom: 10px; }
+    #hint { font-size: 12px; color: #6b6f85; line-height: 1.6; }
+
+    .section-label {
+      font-size: 10px; font-weight: 700; color: #6b6f85;
+      text-transform: uppercase; letter-spacing: 0.08em; margin: 12px 0 5px;
+    }
+
+    /* ── Filter panel ── */
+    #filter-panel {
+      position: absolute; top: 70px; left: 10px; width: 272px;
+      background: #13161fee; backdrop-filter: blur(12px);
+      border: 1px solid #222535; border-radius: 12px;
+      padding: 14px; z-index: 10;
+      display: none;
+    }
+    #filter-panel h3 {
+      font-size: 10px; font-weight: 700; color: #6b6f85;
+      text-transform: uppercase; letter-spacing: 0.09em; margin-bottom: 12px;
+    }
+    .filter-group { margin-bottom: 14px; }
+    .filter-label {
+      font-size: 11px; color: #9ca3af; margin-bottom: 5px;
+      display: flex; justify-content: space-between;
+    }
+    .filter-label span { color: #e8eaf0; font-weight: 600; }
+    .filter-row { display: flex; gap: 6px; align-items: center; }
+
+    input[type=range] {
+      -webkit-appearance: none; appearance: none;
+      width: 100%; height: 4px; border-radius: 2px;
+      background: #2a2d3a; outline: none; cursor: pointer;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 14px; height: 14px;
+      border-radius: 50%; background: #818cf8;
+      border: 2px solid #13161f; cursor: pointer;
+    }
+    input[type=range]::-moz-range-thumb {
+      width: 14px; height: 14px; border-radius: 50%;
+      background: #818cf8; border: 2px solid #13161f; cursor: pointer;
+    }
+
+    .filter-reset {
+      width: 100%; padding: 7px; border-radius: 8px;
+      background: #1c1f2e; border: 1px solid #2a2d3a;
+      color: #8b8fa8; font-size: 12px; cursor: pointer;
+      transition: background 0.1s;
+    }
+    .filter-reset:hover { background: #232744; color: #e8eaf0; }
+
+    /* ── Hike card ── */
+    .hike-item {
+      display: flex; align-items: flex-start; gap: 8px;
+      padding: 8px 10px; border-radius: 8px; margin-bottom: 4px;
+      background: #1c1f2e; font-size: 12px;
+      cursor: pointer; transition: background 0.12s;
+      border: 1px solid transparent;
+    }
+    .hike-item:hover  { background: #232744; }
+    .hike-item.active { background: #1e2a45; border-color: #3b4fa0; }
+    .hike-body { flex: 1; min-width: 0; }
+    .hike-name { font-weight: 600; color: #e8eaf0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .hike-meta { font-size: 10px; color: #8b8fa8; margin-top: 3px; display: flex; gap: 6px; flex-wrap: wrap; }
+    .time-badge {
+      font-size: 11px; font-weight: 700; padding: 2px 8px;
+      border-radius: 99px; white-space: nowrap; flex-shrink: 0; align-self: center;
+    }
+
+    /* ── Elevation chart ── */
+    #elev-chart-wrap {
+      margin: 10px 0 0; background: #1c1f2e; border-radius: 8px;
+      padding: 8px; display: none;
+    }
+    #elev-chart-wrap .chart-title {
+      font-size: 10px; color: #6b6f85; margin-bottom: 4px;
+      display: flex; justify-content: space-between;
+    }
+    #elev-canvas { width: 100%; height: 70px; display: block; border-radius: 4px; }
+
+    /* ── Station row ── */
+    .station-link {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 10px; border-radius: 7px; margin-bottom: 4px;
+      background: #1c1f2e; font-size: 12px;
+      text-decoration: none; cursor: pointer; transition: background 0.1s;
+    }
+    .station-link:hover { background: #232744; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .station-name { flex: 1; font-weight: 500; color: #e0e2ee; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .station-arrow { font-size: 11px; color: #6b6f85; flex-shrink: 0; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(3px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .hike-item, .station-link { animation: fadeIn 0.15s ease; }
+
+    /* ── Colour key ── */
+    #legend {
+      position: absolute; bottom: 28px; left: 12px;
+      background: #13161fee; backdrop-filter: blur(12px);
+      border: 1px solid #222535; border-radius: 10px;
+      padding: 10px 12px; z-index: 10;
+    }
+    #legend h3 { font-size: 10px; font-weight: 700; color: #6b6f85; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+    .legend-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; font-size: 11px; color: #c4c6d4; }
+    .legend-swatch { width: 28px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+    .legend-sep { border-top: 1px solid #222535; margin: 7px 0; }
+
+    /* ── Loading ── */
+    #loading {
+      position: absolute; inset: 0; background: #0f1117d0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 14px; z-index: 100;
+    }
+    .spinner { width: 32px; height: 32px; border: 3px solid #222535; border-top-color: #5b73e8; border-radius: 50%; animation: spin 0.75s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading p { font-size: 13px; color: #8b8fa8; }
+
+    /* ── Stop popup ── */
+    .maplibregl-popup-content {
+      background: #13161f !important; border: 1px solid #2e3250 !important;
+      border-radius: 8px !important; padding: 0 !important;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.65) !important; min-width: 0;
+    }
+    .maplibregl-popup-tip { display: none !important; }
+    .stop-popup-anchor {
+      display: block; padding: 8px 11px; text-decoration: none;
+      border-radius: 8px; transition: background 0.12s;
+    }
+    .stop-popup-anchor:hover { background: #1e2240; }
+    .stop-popup-role { font-size: 10px; font-weight: 700; color: #6b6f85; text-transform: uppercase; letter-spacing: 0.07em; }
+    .stop-popup-name { font-size: 12px; font-weight: 700; color: #fff; margin-top: 2px; white-space: nowrap; }
+
+    .maplibregl-ctrl-attrib { font-size: 10px; }
+
+    /* ── Info modal ── */
+    #info-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
+    #info-modal.open { display: flex; }
+    .info-modal-content { background: #13161f; border: 1px solid #222535; border-radius: 8px; padding: 24px; max-width: 420px; width: 90%; }
+    .info-modal-content h2 { font-size: 18px; font-weight: 700; margin-bottom: 12px; color: #fff; }
+    .info-modal-content h3 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #6b6f85; margin-top: 16px; margin-bottom: 10px; }
+    .info-modal-content p { font-size: 13px; color: #c4c6d4; line-height: 1.5; margin: 8px 0; }
+    .info-modal-content ul { list-style: none; padding: 0; margin: 0; }
+    .info-modal-content li { font-size: 13px; color: #c4c6d4; margin-bottom: 8px; padding-left: 20px; position: relative; }
+    .info-modal-content li:before { content: '•'; position: absolute; left: 0; color: #818cf8; }
+    .info-modal-close { float: right; background: none; border: none; color: #6b6f85; cursor: pointer; font-size: 24px; padding: 0; line-height: 1; }
+    .info-modal-content a { color: #818cf8; text-decoration: none; }
+    .info-modal-content a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>WanderTransit</h1>
+    <p>Find hikes with public transportation access</p>
+  </div>
+</header>
+
+<div id="map"></div>
+
+<!-- Filter panel — left side -->
+<div id="filter-panel">
+  <h3>Filter hikes</h3>
+
+  <div class="filter-group">
+    <div class="filter-label">Max travel time <span id="lbl-travel">any</span></div>
+    <input type="range" id="sl-travel" min="30" max="180" step="30" value="180"
+           oninput="updateFilter()">
+  </div>
+
+  <div class="filter-group">
+    <div class="filter-label">Distance (km)</div>
+    <div class="filter-row">
+      <span style="font-size:10px;color:#6b6f85;width:20px" id="lbl-dist-min">0</span>
+      <input type="range" id="sl-dist-min" min="0" max="50" step="1" value="0"
+             oninput="updateFilter()" style="flex:1">
+      <span style="font-size:10px;color:#6b6f85;width:24px;text-align:right" id="lbl-dist-max">any</span>
+      <input type="range" id="sl-dist-max" min="0" max="50" step="1" value="50"
+             oninput="updateFilter()" style="flex:1">
+    </div>
+  </div>
+
+  <div class="filter-group">
+    <div class="filter-label">Elevation gain (m)</div>
+    <div class="filter-row">
+      <span style="font-size:10px;color:#6b6f85;width:24px" id="lbl-gain-min">0</span>
+      <input type="range" id="sl-gain-min" min="0" max="3000" step="100" value="0"
+             oninput="updateFilter()" style="flex:1">
+      <span style="font-size:10px;color:#6b6f85;width:30px;text-align:right" id="lbl-gain-max">any</span>
+      <input type="range" id="sl-gain-max" min="0" max="3000" step="100" value="3000"
+             oninput="updateFilter()" style="flex:1">
+    </div>
+  </div>
+
+  <div class="filter-group">
+    <div class="filter-label">Max altitude (m)</div>
+    <div class="filter-row">
+      <span style="font-size:10px;color:#6b6f85;width:28px" id="lbl-alt-min">0</span>
+      <input type="range" id="sl-alt-min" min="0" max="4000" step="100" value="0"
+             oninput="updateFilter()" style="flex:1">
+      <span style="font-size:10px;color:#6b6f85;width:30px;text-align:right" id="lbl-alt-max">any</span>
+      <input type="range" id="sl-alt-max" min="0" max="4000" step="100" value="4000"
+             oninput="updateFilter()" style="flex:1">
+    </div>
+  </div>
+
+  <button class="filter-reset" onclick="resetFilters()">Reset filters</button>
+</div>
+
+<!-- Right panel -->
+<div id="panel">
+  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+    <h2 id="panel-title">Hikes</h2>
+    <button id="filter-btn" onclick="toggleFilterPanel()">⚙ Filter</button>
+  </div>
+  <div id="panel-subtitle">Loading…</div>
+  <p id="hint"></p>
+  <div id="elev-chart-wrap">
+    <div class="chart-title">
+      <span>Elevation profile</span>
+      <span id="elev-range"></span>
+    </div>
+    <canvas id="elev-canvas"></canvas>
+  </div>
+  <div id="results"></div>
+</div>
+
+<!-- Legend bottom-left (hidden when filter panel open) -->
+<div id="legend">
+  <h3>Travel time</h3>
+  <div class="legend-row">Click on map to filter</div>
+  <div class="legend-row"></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#4ade80"></div>30 min</div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#86efac"></div>60 min</div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#fde047"></div>90 min</div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#fb923c"></div>120 min</div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#f87171"></div>150 min</div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#dc2626"></div>180 min</div>
+  <div class="legend-sep"></div>
+  <div class="legend-row">
+    <svg width="12" height="11" viewBox="0 0 12 11" style="flex-shrink:0;margin-top:1px"><polygon points="6,0 12,11 0,11" fill="#9ca3af"/></svg>
+    Hike summit
+  </div>
+</div>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <p id="loading-msg">Loading…</p>
+</div>
+
+<!-- Info modal -->
+<div id="info-modal">
+  <div class="info-modal-content">
+    <button class="info-modal-close" onclick="closeInfoModal()">×</button>
+    <h2>WanderTransit</h2>
+    <h3>Credits</h3>
+    <ul>
+      <li>Hike tracks: Creative Commons CC-BY</li>
+      <li>Built with MapLibre GL and Turf.js</a></li>
+      <li>Source code and data sources in <a href="https://github.com/gperonato/wandertransit" target="_blank">GitHub</a></li>
+    </ul>
+  </div>
+</div>
+
+<script>
+// ── Map ───────────────────────────────────────────────────────────────────────
+const map = new maplibregl.Map({
+  container: 'map',
+  style: 'https://tiles.openfreemap.org/styles/liberty',
+  center: [10.5, 47.2], zoom: 6,
+});
+map.on('styleimagemissing', () => {});
+map.addControl(new maplibregl.NavigationControl(), 'top-left');
+
+class InfoControl {
+  onAdd(map) {
+    this.map = map;
+    this.container = document.createElement('div');
+    this.container.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+
+    const btn = document.createElement('button');
+    btn.className = 'maplibregl-ctrl-icon';
+    btn.type = 'button';
+    btn.title = 'About WanderTransit';
+    btn.innerHTML = 'ⓘ';
+    btn.style.fontSize = '16px';
+    btn.style.lineHeight = '1';
+    btn.style.fontWeight = '600';
+    btn.style.cursor = 'pointer';
+    btn.onclick = () => openInfoModal();
+
+    this.container.appendChild(btn);
+    return this.container;
+  }
+
+  onRemove() {
+    this.container.parentNode?.removeChild(this.container);
+    this.map = undefined;
+  }
+}
+
+map.addControl(new InfoControl(), 'top-left');
+
+// ── Info modal controls ───────────────────────────────────────────────────────
+function openInfoModal() {
+  document.getElementById('info-modal').classList.add('open');
+}
+
+function closeInfoModal() {
+  document.getElementById('info-modal').classList.remove('open');
+}
+
+// Close modal when clicking outside the content
+document.getElementById('info-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'info-modal') closeInfoModal();
+});
+
+// ── Config ────────────────────────────────────────────────────────────────────
+const BAND_COLORS = {
+   30: '#4ade80', 60: '#86efac', 90: '#fde047',
+  120: '#fb923c', 150: '#f87171', 180: '#dc2626',
+};
+const CUTOFFS = [30, 60, 90, 120, 150, 180];
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let hikes = [];
+let isochroneFeatures = [];
+let isoIndex = {};
+let gpxFeatures = {};
+let selectedHikeId = null;
+let clickMarker = null;
+let lastHikeTime = {};       // result of last map click query
+let activeFilters = {};      // populated by updateFilter()
+const stopPopups = [];
+
+// ── Filter panel ──────────────────────────────────────────────────────────────
+function toggleFilterPanel() {
+  const fp = document.getElementById('filter-panel');
+  const btn = document.getElementById('filter-btn');
+  const open = fp.style.display === 'block';
+  fp.style.display = open ? 'none' : 'block';
+  btn.classList.toggle('active', !open);
+}
+
+function updateFilter() {
+  const travel   = +document.getElementById('sl-travel').value;
+  const distMin  = +document.getElementById('sl-dist-min').value;
+  const distMax  = +document.getElementById('sl-dist-max').value;
+  const gainMin  = +document.getElementById('sl-gain-min').value;
+  const gainMax  = +document.getElementById('sl-gain-max').value;
+  const altMin   = +document.getElementById('sl-alt-min').value;
+  const altMax   = +document.getElementById('sl-alt-max').value;
+
+  document.getElementById('lbl-travel').textContent   = travel < 180 ? `${travel} min` : 'any';
+  document.getElementById('lbl-dist-min').textContent = distMin > 0 ? distMin : '0';
+  document.getElementById('lbl-dist-max').textContent = distMax < 50 ? distMax : 'any';
+  document.getElementById('lbl-gain-min').textContent = gainMin > 0 ? gainMin : '0';
+  document.getElementById('lbl-gain-max').textContent = gainMax < 3000 ? gainMax : 'any';
+  document.getElementById('lbl-alt-min').textContent  = altMin > 0 ? altMin : '0';
+  document.getElementById('lbl-alt-max').textContent  = altMax < 4000 ? altMax : 'any';
+
+  activeFilters = { travel, distMin, distMax, gainMin, gainMax, altMin, altMax };
+
+  // Re-render current panel with filters applied
+  if (Object.keys(lastHikeTime).length) {
+    applyQueryWithFilters();
+  } else {
+    renderDefaultPanel();
+  }
+}
+
+function passesFilter(hike, travelMin) {
+  const f = activeFilters;
+  if (!f || !Object.keys(f).length) return true;
+  if (travelMin != null && f.travel < 180 && travelMin > f.travel) return false;
+  if (hike.distance_km != null) {
+    if (f.distMin > 0 && hike.distance_km < f.distMin) return false;
+    if (f.distMax < 50 && hike.distance_km > f.distMax) return false;
+  }
+  if (hike.elevation_gain_m != null) {
+    if (f.gainMin > 0 && hike.elevation_gain_m < f.gainMin) return false;
+    if (f.gainMax < 3000 && hike.elevation_gain_m > f.gainMax) return false;
+  }
+  if (hike.max_altitude_m != null) {
+    if (f.altMin > 0 && hike.max_altitude_m < f.altMin) return false;
+    if (f.altMax < 4000 && hike.max_altitude_m > f.altMax) return false;
+  }
+  return true;
+}
+
+function resetFilters() {
+  document.getElementById('sl-travel').value   = 180;
+  document.getElementById('sl-dist-min').value = 0;
+  document.getElementById('sl-dist-max').value = 50;
+  document.getElementById('sl-gain-min').value = 0;
+  document.getElementById('sl-gain-max').value = 3000;
+  document.getElementById('sl-alt-min').value  = 0;
+  document.getElementById('sl-alt-max').value  = 4000;
+  activeFilters = {};
+  updateFilter();
+}
+
+// ── Travel links ──────────────────────────────────────────────────────────────
+function travelLink(station, role) {
+  const name = encodeURIComponent(station.name);
+  // For end stops: hiker departs from the stop → prefill as departure
+  // For start/both stops: hiker arrives at the stop → prefill as destination
+  const isDep = (role === 'end');
+  if (station.region === 'CH') {
+    const param = isDep ? `von=${name}` : `nach=${name}`;
+    return `https://www.sbb.ch/en/buying/pages/fahrplan/fahrplan.xhtml?${param}`;
+  }
+  const param = isDep ? `SO=${name}` : `ZO=${name}`;
+  return `https://int.bahn.de/en/buchung/start#?${param}`;
+}
+
+// ── Load ──────────────────────────────────────────────────────────────────────
+async function loadAll() {
+  const setMsg = t => document.getElementById('loading-msg').textContent = t;
+  try {
+    setMsg('Loading hikes…');
+    const hikesResp = await fetch('hikes.json');
+    if (!hikesResp.ok) throw new Error('hikes.json not found — run: make destinations');
+    hikes = await hikesResp.json();
+
+    setMsg('Loading GPX tracks…');
+    const gpxResp = await fetch('gpx_tracks.geojson');
+    if (gpxResp.ok) {
+      const d = await gpxResp.json();
+      d.features.forEach(f => { gpxFeatures[f.properties.file] = f; });
+    }
+
+    setMsg('Loading isochrones…');
+    const manifestResp = await fetch('manifest.json');
+    if (!manifestResp.ok) throw new Error('manifest.json not found — run: make isochrones');
+    const manifest = await manifestResp.json();
+
+    setMsg(`Loading ${manifest.length} catchment areas…`);
+    const fetched = await Promise.allSettled(
+      manifest.map(d => fetch(d.file).then(r => r.ok ? r.json() : null).then(fc => fc ? fc.features : []))
+    );
+    isochroneFeatures = fetched.filter(r => r.status === 'fulfilled' && r.value).flatMap(r => r.value);
+    isochroneFeatures.forEach(f => {
+      const id = f.properties.id;
+      if (!isoIndex[id]) isoIndex[id] = [];
+      isoIndex[id].push(f);
+    });
+
+    const onLoad = () => {
+      const style = map.getStyle();
+      if (!style.glyphs) map.setGlyphs('https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf');
+      addGpxLayers();
+      addHikeDots();
+      document.getElementById('loading').style.display = 'none';
+      renderDefaultPanel();
+    };
+    map.loaded() ? onLoad() : map.once('load', onLoad);
+
+  } catch (err) {
+    document.getElementById('loading').innerHTML =
+      `<div style="text-align:center;padding:24px">
+        <p style="color:#f87171;font-size:14px">⚠ ${err.message}</p>
+        <p style="color:#6b6f85;font-size:12px;margin-top:8px">Check the browser console.</p>
+       </div>`;
+    console.error(err);
+  }
+}
+
+// ── GPX layers ────────────────────────────────────────────────────────────────
+function addGpxLayers() {
+  const allTracks = { type:'FeatureCollection', features: Object.values(gpxFeatures) };
+  map.addSource('gpx-all', { type:'geojson', data: allTracks });
+  map.addLayer({ id:'gpx-dim', type:'line', source:'gpx-all',
+    paint:{ 'line-color':'#818cf8', 'line-width':1.5, 'line-opacity':0.2 } });
+
+  map.addSource('gpx-selected', { type:'geojson', data:{ type:'FeatureCollection', features:[] } });
+  map.addLayer({ id:'gpx-highlight', type:'line', source:'gpx-selected',
+    paint:{ 'line-color':'#a5b4fc', 'line-width':3.5, 'line-opacity':0.95 } });
+
+  // Start/End icons as SDF canvas images (glyph-independent, always renders)
+  function makeEndpointSDF(size, isStart) {
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff';
+    // Filled circle
+    ctx.beginPath(); ctx.arc(size/2, size/2, size/2 - 0.5, 0, Math.PI*2); ctx.fill();
+    // Punch out inner shape (SDF = white=filled, so subtract inner shape)
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = '#fff';
+    if (isStart) {
+      // Play triangle pointing right
+      const p = size * 0.22;
+      ctx.beginPath();
+      ctx.moveTo(size*0.28, p);
+      ctx.lineTo(size - p, size/2);
+      ctx.lineTo(size*0.28, size - p);
+      ctx.closePath(); ctx.fill();
+    } else {
+      // Stop square
+      const p = size * 0.28;
+      ctx.fillRect(p, p, size - p*2, size - p*2);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    return ctx.getImageData(0, 0, size, size);
+  }
+  const EP_SIZE = 22;
+  map.addImage('ep-start', makeEndpointSDF(EP_SIZE, true),  { sdf: true, pixelRatio: 1 });
+  map.addImage('ep-end',   makeEndpointSDF(EP_SIZE, false), { sdf: true, pixelRatio: 1 });
+
+  map.addSource('gpx-endpoints', { type:'geojson', data:{ type:'FeatureCollection', features:[] } });
+
+  map.addLayer({
+    id: 'gpx-endpoint-icons', type: 'symbol', source: 'gpx-endpoints',
+    layout: {
+      'icon-image':   ['match', ['get', 'role'], 'start', 'ep-start', 'ep-end'],
+      'icon-size':    1.3,
+      'icon-anchor':  'center',
+      'icon-allow-overlap':    true,
+      'icon-ignore-placement': true,
+    },
+    paint: {
+      'icon-color':       ['match', ['get', 'role'], 'start', '#4ade80', '#f87171'],
+      'icon-halo-color':  '#0f1117',
+      'icon-halo-width':  1.5,
+    },
+  });
+
+  map.addLayer({
+    id: 'gpx-endpoint-labels', type: 'symbol', source: 'gpx-endpoints',
+    layout: {
+      'text-field':  ['match', ['get', 'role'], 'start', 'Start', 'End'],
+      'text-size':   11,
+      'text-font':   ['Open Sans Regular', 'Arial Unicode MS Regular'],
+      'text-anchor': 'left', 'text-offset': [1.1, 0],
+      'text-allow-overlap': false, 'text-optional': true,
+    },
+    paint: { 'text-color': '#e8eaf0', 'text-halo-color': '#0f1117', 'text-halo-width': 1.5 },
+    minzoom: 9,
+  });
+}
+
+// ── Peak SDF image ────────────────────────────────────────────────────────────
+function makeTriangleSDF(size) {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, size, size);
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.moveTo(size / 2, 2);
+  ctx.lineTo(size - 2, size - 2);
+  ctx.lineTo(2, size - 2);
+  ctx.closePath();
+  ctx.fill();
+  return ctx.getImageData(0, 0, size, size);
+}
+
+// ── Hike dots ─────────────────────────────────────────────────────────────────
+function addHikeDots() {
+  map.addImage('peak-triangle', makeTriangleSDF(24), { sdf: true, pixelRatio: 1 });
+
+  const dotFeatures = hikes.map(h => ({
+    type:'Feature',
+    properties:{ id:h.id, name:h.name, file:h.file, color:'#9ca3af',
+                 peak_name: h.osm_peak_name || '' },
+    geometry:{ type:'Point', coordinates:[h.lon, h.lat] },
+  }));
+
+  map.addSource('hike-dots-src', { type:'geojson', data:{ type:'FeatureCollection', features:dotFeatures } });
+  map.addLayer({ id:'hike-peaks', type:'symbol', source:'hike-dots-src',
+    layout:{ 'icon-image':'peak-triangle','icon-size':0.7,'icon-anchor':'bottom','icon-allow-overlap':true,'icon-ignore-placement':true },
+    paint:{ 'icon-color':'#9ca3af','icon-halo-color':'#0f1117','icon-halo-width':1 },
+  });
+
+  map.addLayer({ id:'hike-peak-labels', type:'symbol', source:'hike-dots-src',
+    filter:['!=',['get','peak_name'],''],
+    layout:{
+      'text-field':['get','peak_name'], 'text-size':11,
+      'text-font':['Open Sans Regular','Arial Unicode MS Regular'],
+      'text-anchor':'top','text-offset':[0,0.8],
+      'text-allow-overlap':false,'text-ignore-placement':false,
+      'text-optional':true,'text-max-width':12,'text-padding':2,
+    },
+    paint:{ 'text-color':'#d1d5db','text-halo-color':'#0f1117','text-halo-width':1.5 },
+    minzoom: 7,
+  });
+
+  map.addSource('hike-dots-reachable-src', { type:'geojson', data:{ type:'FeatureCollection', features:[] } });
+  map.addLayer({ id:'hike-peaks-reachable', type:'symbol', source:'hike-dots-reachable-src',
+    layout:{ 'icon-image':'peak-triangle','icon-size':0.85,'icon-anchor':'bottom','icon-allow-overlap':true,'icon-ignore-placement':true },
+    paint:{ 'icon-color':['get','color'],'icon-halo-color':'#0f1117','icon-halo-width':1 },
+  });
+
+  map.addSource('hike-dot-selected-src', { type:'geojson', data:{ type:'FeatureCollection', features:[] } });
+  map.addLayer({ id:'hike-peaks-selected', type:'symbol', source:'hike-dot-selected-src',
+    layout:{ 'icon-image':'peak-triangle','icon-size':1.1,'icon-anchor':'bottom','icon-allow-overlap':true,'icon-ignore-placement':true },
+    paint:{ 'icon-color':'#e5e7eb','icon-halo-color':'#6b7280','icon-halo-width':3 },
+  });
+
+  ['hike-peaks-reachable','hike-peaks'].forEach(l => {
+    map.on('mouseenter', l, () => map.getCanvas().style.cursor = 'pointer');
+    map.on('mouseleave', l, () => map.getCanvas().style.cursor = 'crosshair');
+    map.on('click', l, e => { selectHike(e.features[0].properties.id); e.originalEvent.stopPropagation(); });
+  });
+
+  if (hikes.length > 0) {
+    try { map.fitBounds(turf.bbox({ type:'FeatureCollection', features:dotFeatures }), { padding: {top: 40, bottom:40, left: 150, right: 250}, maxZoom:9, duration:0 }); } catch {}
+  }
+}
+
+function updatePeakMarkerColors(hikeTimeMap) {
+  map.getSource('hike-dots-reachable-src').setData({
+    type:'FeatureCollection',
+    features: hikes
+      .filter(h => hikeTimeMap[h.id] !== undefined)
+      .map(h => ({
+        type:'Feature',
+        properties:{ id:h.id, name:h.name, file:h.file, color: BAND_COLORS[hikeTimeMap[h.id]] || '#818cf8' },
+        geometry:{ type:'Point', coordinates:[h.lon, h.lat] },
+      })),
+  });
+}
+
+function updatePeakMarkerSelected(hikeId) {
+  const hike = hikes.find(h => h.id === hikeId);
+  map.getSource('hike-dot-selected-src').setData({
+    type:'FeatureCollection',
+    features: hike ? [{ type:'Feature', properties:{ id:hike.id },
+      geometry:{ type:'Point', coordinates:[hike.lon, hike.lat] } }] : [],
+  });
+}
+
+// ── Elevation profile chart ───────────────────────────────────────────────────
+function drawElevationProfile(feat) {
+  const wrap = document.getElementById('elev-chart-wrap');
+  if (!feat) { wrap.style.display = 'none'; return; }
+
+  const coords = feat.geometry.coordinates;
+  const elevs = coords.map(c => c[2]).filter(e => e != null);
+  if (elevs.length < 2) { wrap.style.display = 'none'; return; }
+
+  wrap.style.display = 'block';
+  const minE = Math.min(...elevs), maxE = Math.max(...elevs);
+  document.getElementById('elev-range').textContent =
+    `${Math.round(minE)}–${Math.round(maxE)} m`;
+
+  const canvas = document.getElementById('elev-canvas');
+  // Set physical pixel size
+  const W = canvas.parentElement.clientWidth - 16;
+  const H = 70;
+  canvas.width  = W * devicePixelRatio;
+  canvas.height = H * devicePixelRatio;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+
+  const pad = { t:4, b:16, l:0, r:0 };
+  const cw = W - pad.l - pad.r;
+  const ch = H - pad.t - pad.b;
+
+  const xOf = i => pad.l + (i / (elevs.length - 1)) * cw;
+  const yOf = e => pad.t + ch - ((e - minE) / (maxE - minE || 1)) * ch;
+
+  // Gradient fill
+  const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + ch);
+  grad.addColorStop(0, '#818cf840');
+  grad.addColorStop(1, '#818cf808');
+  ctx.beginPath();
+  elevs.forEach((e, i) => i === 0 ? ctx.moveTo(xOf(i), yOf(e)) : ctx.lineTo(xOf(i), yOf(e)));
+  ctx.lineTo(xOf(elevs.length - 1), pad.t + ch);
+  ctx.lineTo(xOf(0), pad.t + ch);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  elevs.forEach((e, i) => i === 0 ? ctx.moveTo(xOf(i), yOf(e)) : ctx.lineTo(xOf(i), yOf(e)));
+  ctx.strokeStyle = '#818cf8';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Y-axis labels
+  ctx.fillStyle = '#6b6f85';
+  ctx.font = `${9 * devicePixelRatio / devicePixelRatio}px sans-serif`;
+  ctx.textAlign = 'left';
+  ctx.fillText(`${Math.round(maxE)}m`, 2, pad.t + 8);
+  ctx.fillText(`${Math.round(minE)}m`, 2, pad.t + ch - 2);
+
+  // Start/end dots on profile
+  ctx.beginPath();
+  ctx.arc(xOf(0), yOf(elevs[0]), 3, 0, Math.PI * 2);
+  ctx.fillStyle = '#4ade80'; ctx.fill();
+  ctx.beginPath();
+  ctx.arc(xOf(elevs.length-1), yOf(elevs[elevs.length-1]), 3, 0, Math.PI * 2);
+  ctx.fillStyle = '#f87171'; ctx.fill();
+}
+
+// ── Click map ─────────────────────────────────────────────────────────────────
+map.on('click', e => {
+  if (map.queryRenderedFeatures(e.point, { layers:['hike-peaks-reachable','hike-peaks'] }).length) return;
+
+  if (clickMarker) clickMarker.remove();
+  clickMarker = new maplibregl.Marker({ color:'#c7d2fe', scale:0.75 }).setLngLat(e.lngLat).addTo(map);
+  clearHikeSelection();
+
+  const pt = turf.point([e.lngLat.lng, e.lngLat.lat]);
+  lastHikeTime = {};
+  hikes.forEach(hike => {
+    hike.stop_dest_ids.forEach(destId => {
+      (isoIndex[destId] || []).forEach(f => {
+        try {
+          if (!turf.booleanPointInPolygon(pt, f)) return;
+          const t = f.properties.duration_min;
+          if (lastHikeTime[hike.id] === undefined || t < lastHikeTime[hike.id]) lastHikeTime[hike.id] = t;
+        } catch {}
+      });
+    });
+  });
+
+  updatePeakMarkerColors(lastHikeTime);
+  applyQueryWithFilters();
+});
+
+function applyQueryWithFilters() {
+  const reachable = hikes
+    .filter(h => lastHikeTime[h.id] !== undefined)
+    .map(h => ({ ...h, travel_min: lastHikeTime[h.id] }))
+    .filter(h => passesFilter(h, h.travel_min))
+    .sort((a,b) => a.travel_min - b.travel_min || a.name.localeCompare(b.name));
+  renderQueryResults(reachable);
+}
+
+// ── Select hike ───────────────────────────────────────────────────────────────
+function selectHike(hikeId) {
+  selectedHikeId = hikeId;
+  const hike = hikes.find(h => h.id === hikeId);
+  if (!hike) return;
+
+  updatePeakMarkerSelected(hikeId);
+
+  const feat = gpxFeatures[hike.file];
+  if (feat) {
+    map.getSource('gpx-selected').setData({ type:'FeatureCollection', features:[feat] });
+    const coords = feat.geometry.coordinates;
+    map.getSource('gpx-endpoints').setData({
+      type:'FeatureCollection',
+      features:[
+        { type:'Feature', properties:{role:'start'}, geometry:{type:'Point', coordinates:coords[0]} },
+        { type:'Feature', properties:{role:'end'},   geometry:{type:'Point', coordinates:coords[coords.length-1]} },
+      ],
+    });
+    try { map.fitBounds(turf.bbox(feat), { padding:80, maxZoom:13, duration:600 }); } catch {}
+    drawElevationProfile(feat);
+  }
+
+  showStopTooltips(hike);
+  renderSelectedHikePanel(hike);
+  renderHikeStops(hike);
+}
+
+// ── Stop tooltips ─────────────────────────────────────────────────────────────
+function showStopTooltips(hike) {
+  clearStopTooltips();
+  if (!hike.stops?.length) return;
+
+  const stopInfo = {};
+  isochroneFeatures.forEach(f => { if (!stopInfo[f.properties.id]) stopInfo[f.properties.id] = f.properties; });
+
+  hike.stops.forEach(s => {
+    const info = stopInfo[s.dest_id];
+    if (!info) return;
+    const popup = new maplibregl.Popup({ closeButton:false, closeOnClick:false, offset:10, maxWidth:'180px' })
+      .setLngLat([info.lon, info.lat])
+      .setHTML(`<a href="${travelLink(info)}" target="_blank" rel="noopener" class="stop-popup-anchor">
+        <div class="stop-popup-name">${info.name}</div>
+      </a>`)
+      .addTo(map);
+    stopPopups.push(popup);
+  });
+}
+
+function clearStopTooltips() {
+  stopPopups.forEach(p => p.remove());
+  stopPopups.length = 0;
+}
+
+const STOP_POPUP_MIN_ZOOM = 11;
+map.on('zoom', () => {
+  const z = map.getZoom();
+  stopPopups.forEach(p => {
+    const el = p.getElement();
+    if (el) el.style.display = z >= STOP_POPUP_MIN_ZOOM ? '' : 'none';
+  });
+});
+
+// ── Panel: selected hike view ───────────────────────────────────────────────
+function renderSelectedHikePanel(hike) {
+  const travelMin = lastHikeTime[hike.id];
+  const color = travelMin != null ? (BAND_COLORS[travelMin] || '#8b8fa8') : '#818cf8';
+
+  document.getElementById('panel-title').textContent = hike.name;
+  document.getElementById('panel-subtitle').innerHTML =
+    `<span style="cursor:pointer;color:#818cf8" onclick="clearHikeSelectionAndRestore()">← Back</span>`;
+  document.getElementById('hint').textContent = '';
+  document.getElementById('elev-chart-wrap').style.display = 'none';
+
+  const meta = [];
+  if (hike.distance_km)      meta.push(`${hike.distance_km} km`);
+  if (hike.elevation_gain_m) meta.push(`↑ ${hike.elevation_gain_m.toLocaleString()} m`);
+  if (hike.max_altitude_m)   meta.push(`▲ ${hike.max_altitude_m.toLocaleString()} m`);
+  if (hike.duration_min) {
+    const h = Math.floor(hike.duration_min / 60), m = hike.duration_min % 60;
+    meta.push(`⏱ ${h}h${String(m).padStart(2,'0')}`);
+  }
+
+  const timeBadge = travelMin != null
+    ? `<span class="time-badge" style="background:${color}22;color:${color};border:1px solid ${color}55">${travelMin} min transit</span>`
+    : '';
+
+  document.getElementById('results').innerHTML = `
+    <div class="hike-item active" style="cursor:default;flex-direction:column;gap:6px">
+      <div style="display:flex;align-items:flex-start;gap:8px;width:100%">
+        <div class="hike-body">
+          <div class="hike-name">${hike.name}</div>
+          ${meta.length ? `<div class="hike-meta">${meta.join(' · ')}</div>` : ''}
+        </div>
+        ${timeBadge}
+        <a href="gpx/${hike.file}" download="${hike.file}" onclick="event.stopPropagation()"
+           title="Download GPX"
+           style="font-size:14px;text-decoration:none;color:#93c5fd;flex-shrink:0;align-self:center;line-height:1;padding:2px 4px;border-radius:4px;background:#1e2a45"
+           >&#x2B07;&#xFE0E;</a>
+      </div>
+    </div>`;
+}
+
+// ── Stop links in panel ───────────────────────────────────────────────────────
+function renderHikeStops(hike) {
+  const stationBest = {};
+  isochroneFeatures.forEach(f => {
+    if (!hike.stop_dest_ids.includes(f.properties.id)) return;
+    const { id, name, region, duration_min, lat, lon } = f.properties;
+    if (!stationBest[id] || duration_min < stationBest[id].duration_min)
+      stationBest[id] = { id, name, region, duration_min, lat, lon };
+  });
+
+  // Enrich with role from hike.stops
+  const stopRole = {};
+  (hike.stops || []).forEach(s => { stopRole[s.dest_id] = s.role; });
+
+  const stations = Object.values(stationBest)
+    .sort((a,b) => a.duration_min - b.duration_min || a.name.localeCompare(b.name));
+  if (!stations.length) return;
+
+  document.getElementById('stop-links')?.remove();
+  const div = document.createElement('div');
+  div.id = 'stop-links';
+  div.innerHTML = `
+    <div class="section-label">Access stops</div>
+    ${stations.map(s => {
+      const role = stopRole[s.id] || 'start';
+      const isEnd  = role === 'end';
+      const isBoth = role === 'both';
+      // Role symbol matching the map icons
+      // SVG matching the SDF icons: circle with ▶ (start) or ■ (end) inside
+      const startSvg = `<svg width="14" height="14" viewBox="0 0 14 14" style="flex-shrink:0">
+        <circle cx="7" cy="7" r="6.5" fill="#4ade80"/>
+        <polygon points="4.5,3.5 11,7 4.5,10.5" fill="white"/>
+      </svg>`;
+      const endSvg = `<svg width="14" height="14" viewBox="0 0 14 14" style="flex-shrink:0">
+        <circle cx="7" cy="7" r="6.5" fill="#f87171"/>
+        <rect x="3.5" y="3.5" width="7" height="7" fill="white"/>
+      </svg>`;
+      const sym = isBoth
+        ? `<span style="display:inline-flex;gap:2px;flex-shrink:0">${startSvg}${endSvg}</span>`
+        : isEnd ? endSvg : startSvg;
+      return `
+      <a href="${travelLink(s, role)}" target="_blank" rel="noopener" class="station-link">
+        ${sym}
+        <span class="station-name">${s.name}</span>
+        <span class="station-arrow">→</span>
+      </a>`;
+    }).join('')}`;
+  document.getElementById('panel').appendChild(div);
+}
+
+// ── Clear selection ───────────────────────────────────────────────────────────
+function clearHikeSelection() {
+  clearStopTooltips();
+  document.getElementById('stop-links')?.remove();
+  document.getElementById('elev-chart-wrap').style.display = 'none';
+  updatePeakMarkerSelected(null);
+  selectedHikeId = null;
+  map.getSource('gpx-selected')?.setData({ type:'FeatureCollection', features:[] });
+  map.getSource('gpx-endpoints')?.setData({ type:'FeatureCollection', features:[] });
+}
+
+function clearHikeSelectionAndRestore() {
+  clearHikeSelection();
+  // Restore whichever panel was showing before selection
+  if (Object.keys(lastHikeTime).length) {
+    applyQueryWithFilters();
+  } else {
+    renderDefaultPanel();
+  }
+}
+
+// ── Panel: default ────────────────────────────────────────────────────────────
+function renderDefaultPanel() {
+  document.getElementById('panel-title').textContent = 'Hikes';
+  const filtered = hikes.filter(h => passesFilter(h, null));
+  const total = hikes.length;
+  document.getElementById('panel-subtitle').textContent =
+    filtered.length < total
+      ? `${filtered.length} / ${total} routes`
+      : `${total} route${total !== 1 ? 's' : ''}`;
+  document.getElementById('hint').textContent = '';
+  const sorted = [...filtered].sort((a,b) => a.name.localeCompare(b.name));
+  document.getElementById('results').innerHTML = sorted.map(h => hikeCard(h, null)).join('');
+}
+
+// ── Panel: query results ──────────────────────────────────────────────────────
+function renderQueryResults(reachable) {
+  document.getElementById('panel-title').textContent = 'Reachable hikes';
+  document.getElementById('panel-subtitle').innerHTML =
+    `<span style="cursor:pointer;color:#818cf8" onclick="resetQuery()">← All hikes</span>`;
+  if (!reachable.length) {
+    document.getElementById('hint').textContent = 'No hikes match filters from here.';
+    document.getElementById('results').innerHTML = '';
+    return;
+  }
+  document.getElementById('hint').textContent = '';
+  document.getElementById('results').innerHTML = reachable.map(h => hikeCard(h, h.travel_min)).join('');
+}
+
+// ── Hike card ─────────────────────────────────────────────────────────────────
+function hikeCard(hike, travelMin) {
+  const color = travelMin != null ? (BAND_COLORS[travelMin] || '#8b8fa8') : '#818cf8';
+  const timeBadge = travelMin != null
+    ? `<span class="time-badge" style="background:${color}22;color:${color};border:1px solid ${color}55">${travelMin} min</span>`
+    : '';
+  const meta = [];
+  if (hike.distance_km)      meta.push(`${hike.distance_km} km`);
+  if (hike.elevation_gain_m) meta.push(`\u2191 ${hike.elevation_gain_m.toLocaleString()} m`);
+  if (hike.max_altitude_m)   meta.push(`\u25b2 ${hike.max_altitude_m.toLocaleString()} m`);
+  if (hike.duration_min) {
+    const h = Math.floor(hike.duration_min / 60), m = hike.duration_min % 60;
+    meta.push(`\u23f1 ${h}h${String(m).padStart(2,'0')}`);
+  }
+  return `
+    <div class="hike-item${selectedHikeId === hike.id ? ' active' : ''}"
+         data-id="${hike.id}" onclick="selectHike('${hike.id}')">
+      <div class="hike-body">
+        <div class="hike-name">${hike.name}</div>
+        ${meta.length ? `<div class="hike-meta">${meta.join(' · ')}</div>` : ''}
+      </div>
+      ${timeBadge}
+      <a href="gpx/${hike.file}" download="${hike.file}" onclick="event.stopPropagation()" title="Download GPX" style="font-size:14px;text-decoration:none;color:#93c5fd;flex-shrink:0;align-self:center;line-height:1;padding:2px 4px;border-radius:4px;background:#1e2a45">&#x2B07;&#xFE0E;</a>
+    </div>`;
+}
+
+// ── Reset query ───────────────────────────────────────────────────────────────
+function resetQuery() {
+  lastHikeTime = {};
+  if (clickMarker) { clickMarker.remove(); clickMarker = null; }
+  clearHikeSelection();
+  map.getSource('hike-dots-reachable-src')?.setData({ type:'FeatureCollection', features:[] });
+  updatePeakMarkerColors({});
+  updatePeakMarkerSelected(null);
+  renderDefaultPanel();
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+loadAll();
+</script>
+</body>
+</html>
