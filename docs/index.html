@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>WanderTransit · Hiking by Public Transport</title>
+  <title>WanderTransit</title>
 
   <link href="https://unpkg.com/maplibre-gl@4.1.0/dist/maplibre-gl.css" rel="stylesheet" />
   <script src="https://unpkg.com/maplibre-gl@4.1.0/dist/maplibre-gl.js"></script>
@@ -27,7 +27,7 @@
     header h1 { font-size: 14px; font-weight: 700; color: #fff; white-space: nowrap; letter-spacing: -0.01em; }
     header p  { font-size: 11px; color: #6b6f85; margin-top: 2px; }
 
-    /* ── Filter toggle button in header ── */
+    /* ── Filter toggle button in panel ── */
     #filter-btn {
       font-size: 11px; font-weight: 600; padding: 5px 11px;
       border-radius: 8px; border: 1px solid #2a2d3a;
@@ -78,6 +78,8 @@
     }
     .filter-label span { color: #e8eaf0; font-weight: 600; }
     .filter-row { display: flex; gap: 6px; align-items: center; }
+    .range-label { font-size: 10px; color: #6b6f85; min-width: 24px; }
+    .range-label.right { text-align: right; }
 
     input[type=range] {
       -webkit-appearance: none; appearance: none;
@@ -139,7 +141,6 @@
       text-decoration: none; cursor: pointer; transition: background 0.1s;
     }
     .station-link:hover { background: #232744; }
-    .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
     .station-name { flex: 1; font-weight: 500; color: #e0e2ee; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .station-arrow { font-size: 11px; color: #6b6f85; flex-shrink: 0; }
 
@@ -151,7 +152,7 @@
 
     /* ── Colour key ── */
     #legend {
-      position: absolute; bottom: 28px; left: 12px;
+      position: absolute; bottom: 50px; left: 12px;
       background: #13161fee; backdrop-filter: blur(12px);
       border: 1px solid #222535; border-radius: 10px;
       padding: 10px 12px; z-index: 10;
@@ -183,10 +184,68 @@
       border-radius: 8px; transition: background 0.12s;
     }
     .stop-popup-anchor:hover { background: #1e2240; }
-    .stop-popup-role { font-size: 10px; font-weight: 700; color: #6b6f85; text-transform: uppercase; letter-spacing: 0.07em; }
     .stop-popup-name { font-size: 12px; font-weight: 700; color: #fff; margin-top: 2px; white-space: nowrap; }
 
     .maplibregl-ctrl-attrib { font-size: 10px; }
+
+    /* ── Mobile legend: hidden on desktop ── */
+    #legend-mobile { display: none; }
+
+    /* ── Mobile: bottom sheet ── */
+    @media (max-width: 700px) {
+      .maplibregl-ctrl-bottom-right { bottom: 130px; }
+      .maplibregl-ctrl-bottom-left  { bottom: 130px; }
+      #legend-mobile {
+        display: flex;
+        position: fixed;
+        bottom: 0; left: 0; right: 0;
+        background: #13161f;
+        border-top: 1px solid #222535;
+        padding: 6px 12px 10px;
+        z-index: 25;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 4px 10px;
+      }
+      #panel {
+        position: fixed;
+        top: auto;
+        bottom: 0;
+        right: 0;
+        left: 0;
+        width: 100%;
+        height: 60vh;
+        max-height: 60vh;
+        border-radius: 14px 14px 0 0;
+        border-bottom: none;
+        border-left: none;
+        border-right: none;
+        background: #13161f;
+        backdrop-filter: none;
+        padding: 14px 14px 6px;
+        transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+        transform: translateY(calc(100% - 64px));
+        z-index: 20;
+      }
+      /* drag handle */
+      #panel::before {
+        content: '';
+        display: block;
+        width: 36px; height: 4px;
+        background: #3a3d52;
+        border-radius: 2px;
+        margin: 0 auto 10px;
+        flex-shrink: 0;
+      }
+      /* hide right-side legend on mobile; use inline horizontal one */
+      #legend { display: none; }
+      /* filter panel: full-width below header */
+      #filter-panel {
+        left: 0; right: 0; width: 100%;
+        top: 56px; border-radius: 0;
+        max-height: 70vh; overflow-y: auto;
+      }
+    }
 
     /* ── Info modal ── */
     #info-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
@@ -208,7 +267,7 @@
 <header>
   <div>
     <h1>WanderTransit</h1>
-    <p>Find hikes with public transportation access</p>
+    <p>Hikes with public transportation access</p>
   </div>
 </header>
 
@@ -227,10 +286,10 @@
   <div class="filter-group">
     <div class="filter-label">Distance (km)</div>
     <div class="filter-row">
-      <span style="font-size:10px;color:#6b6f85;width:20px" id="lbl-dist-min">0</span>
+      <span class="range-label" id="lbl-dist-min">0</span>
       <input type="range" id="sl-dist-min" min="0" max="50" step="1" value="0"
              oninput="updateFilter()" style="flex:1">
-      <span style="font-size:10px;color:#6b6f85;width:24px;text-align:right" id="lbl-dist-max">any</span>
+      <span class="range-label right" id="lbl-dist-max">any</span>
       <input type="range" id="sl-dist-max" min="0" max="50" step="1" value="50"
              oninput="updateFilter()" style="flex:1">
     </div>
@@ -239,10 +298,10 @@
   <div class="filter-group">
     <div class="filter-label">Elevation gain (m)</div>
     <div class="filter-row">
-      <span style="font-size:10px;color:#6b6f85;width:24px" id="lbl-gain-min">0</span>
+      <span class="range-label" id="lbl-gain-min">0</span>
       <input type="range" id="sl-gain-min" min="0" max="3000" step="100" value="0"
              oninput="updateFilter()" style="flex:1">
-      <span style="font-size:10px;color:#6b6f85;width:30px;text-align:right" id="lbl-gain-max">any</span>
+      <span class="range-label right" id="lbl-gain-max">any</span>
       <input type="range" id="sl-gain-max" min="0" max="3000" step="100" value="3000"
              oninput="updateFilter()" style="flex:1">
     </div>
@@ -251,10 +310,10 @@
   <div class="filter-group">
     <div class="filter-label">Max altitude (m)</div>
     <div class="filter-row">
-      <span style="font-size:10px;color:#6b6f85;width:28px" id="lbl-alt-min">0</span>
+      <span class="range-label" id="lbl-alt-min">0</span>
       <input type="range" id="sl-alt-min" min="0" max="4000" step="100" value="0"
              oninput="updateFilter()" style="flex:1">
-      <span style="font-size:10px;color:#6b6f85;width:30px;text-align:right" id="lbl-alt-max">any</span>
+      <span class="range-label right" id="lbl-alt-max">any</span>
       <input type="range" id="sl-alt-max" min="0" max="4000" step="100" value="4000"
              oninput="updateFilter()" style="flex:1">
     </div>
@@ -265,9 +324,9 @@
 
 <!-- Right panel -->
 <div id="panel">
-  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; cursor: pointer;" onclick="toggleSheet()">
     <h2 id="panel-title">Hikes</h2>
-    <button id="filter-btn" onclick="toggleFilterPanel()">⚙ Filter</button>
+    <button id="filter-btn" onclick="event.stopPropagation(); toggleFilterPanel()">⚙ Filter</button>
   </div>
   <div id="panel-subtitle">Loading…</div>
   <p id="hint"></p>
@@ -281,11 +340,21 @@
   <div id="results"></div>
 </div>
 
+<!-- Horizontal legend for mobile (hidden on desktop) -->
+<div id="legend-mobile">
+  <span style="width:100%;font-size:10px;font-weight:700;color:#6b6f85;text-transform:uppercase;letter-spacing:0.08em;">Travel time · Click on map to filter</span>
+  <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#c4c6d4"><span style="display:inline-block;width:18px;height:7px;border-radius:2px;background:#4ade80"></span>30m</span>
+  <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#c4c6d4"><span style="display:inline-block;width:18px;height:7px;border-radius:2px;background:#86efac"></span>60m</span>
+  <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#c4c6d4"><span style="display:inline-block;width:18px;height:7px;border-radius:2px;background:#fde047"></span>90m</span>
+  <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#c4c6d4"><span style="display:inline-block;width:18px;height:7px;border-radius:2px;background:#fb923c"></span>120m</span>
+  <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#c4c6d4"><span style="display:inline-block;width:18px;height:7px;border-radius:2px;background:#f87171"></span>150m</span>
+  <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#c4c6d4"><span style="display:inline-block;width:18px;height:7px;border-radius:2px;background:#dc2626"></span>180m</span>
+</div>
+
 <!-- Legend bottom-left (hidden when filter panel open) -->
 <div id="legend">
   <h3>Travel time</h3>
   <div class="legend-row">Click on map to filter</div>
-  <div class="legend-row"></div>
   <div class="legend-row"><div class="legend-swatch" style="background:#4ade80"></div>30 min</div>
   <div class="legend-row"><div class="legend-swatch" style="background:#86efac"></div>60 min</div>
   <div class="legend-row"><div class="legend-swatch" style="background:#fde047"></div>90 min</div>
@@ -309,10 +378,12 @@
   <div class="info-modal-content">
     <button class="info-modal-close" onclick="closeInfoModal()">×</button>
     <h2>WanderTransit</h2>
+    <h3>Disclaimer</h3>
+    <p>Travel time refers only to arrival at the starting point before 10.30 am. No guarantee on the accuracy or completeness of the data. Hike at your own risk.</p>
     <h3>Credits</h3>
     <ul>
       <li>Hike tracks: Creative Commons CC-BY</li>
-      <li>Built with MapLibre GL and Turf.js</a></li>
+      <li>Built with MapLibre GL and Turf.js</li>
       <li>Source code and data sources in <a href="https://github.com/gperonato/wandertransit" target="_blank">GitHub</a></li>
     </ul>
   </div>
@@ -376,7 +447,6 @@ const BAND_COLORS = {
    30: '#4ade80', 60: '#86efac', 90: '#fde047',
   120: '#fb923c', 150: '#f87171', 180: '#dc2626',
 };
-const CUTOFFS = [30, 60, 90, 120, 150, 180];
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let hikes = [];
@@ -509,6 +579,7 @@ async function loadAll() {
       addHikeDots();
       document.getElementById('loading').style.display = 'none';
       renderDefaultPanel();
+      applyMobileLayout(); // re-run after MapLibre controls are rendered
     };
     map.loaded() ? onLoad() : map.once('load', onLoad);
 
@@ -661,7 +732,12 @@ function addHikeDots() {
   });
 
   if (hikes.length > 0) {
-    try { map.fitBounds(turf.bbox({ type:'FeatureCollection', features:dotFeatures }), { padding: {top: 40, bottom:40, left: 150, right: 250}, maxZoom:9, duration:0 }); } catch {}
+    try {
+      const padding = isMobile()
+        ? { top: 40, bottom: 140, left: 20, right: 20 }
+        : { top: 40, bottom: 40, left: 150, right: 250 };
+      map.fitBounds(turf.bbox({ type:'FeatureCollection', features:dotFeatures }), { padding, maxZoom:9, duration:0 });
+    } catch {}
   }
 }
 
@@ -795,6 +871,8 @@ function selectHike(hikeId) {
   const hike = hikes.find(h => h.id === hikeId);
   if (!hike) return;
 
+  openSheet();
+
   updatePeakMarkerSelected(hikeId);
 
   const feat = gpxFeatures[hike.file];
@@ -861,7 +939,6 @@ function renderSelectedHikePanel(hike) {
   document.getElementById('panel-subtitle').innerHTML =
     `<span style="cursor:pointer;color:#818cf8" onclick="clearHikeSelectionAndRestore()">← Back</span>`;
   document.getElementById('hint').textContent = '';
-  document.getElementById('elev-chart-wrap').style.display = 'none';
 
   const meta = [];
   if (hike.distance_km)      meta.push(`${hike.distance_km} km`);
@@ -1027,6 +1104,61 @@ function resetQuery() {
   updatePeakMarkerSelected(null);
   renderDefaultPanel();
 }
+
+// ── Mobile bottom sheet ───────────────────────────────────────────────────────
+function isMobile() { return window.innerWidth <= 700; }
+
+function toggleSheet() {
+  if (!isMobile()) return;
+  const panel = document.getElementById('panel');
+  const opening = !panel.classList.contains('sheet-open');
+  panel.classList.toggle('sheet-open');
+  panel.style.transform = opening ? 'translateY(0)' : `translateY(calc(100% - ${panel.style.getPropertyValue('--peek-offset') || '48px'}))`;
+}
+
+function openSheet() {
+  if (!isMobile()) return;
+  const panel = document.getElementById('panel');
+  panel.classList.add('sheet-open');
+  panel.style.transform = 'translateY(0)';
+}
+
+function closeSheet() {
+  const panel = document.getElementById('panel');
+  panel.classList.remove('sheet-open');
+  if (isMobile()) {
+    panel.style.transform = `translateY(calc(100% - ${panel.style.getPropertyValue('--peek-offset') || '48px'}))`;
+  }
+}
+
+// Keep panel peek above the legend
+function applyMobileLayout() {
+  if (isMobile()) {
+    const lh = document.getElementById('legend-mobile').offsetHeight;
+    const peekOffset = lh + 64;
+    const panel = document.getElementById('panel');
+    panel.style.bottom = '';
+    if (!panel.classList.contains('sheet-open')) {
+      panel.style.transform = `translateY(calc(100% - ${peekOffset}px))`;
+    }
+    panel.style.setProperty('--peek-offset', `${peekOffset}px`);
+    // Push MapLibre attribution above the collapsed panel peek
+    document.querySelectorAll('.maplibregl-ctrl-bottom-right, .maplibregl-ctrl-bottom-left')
+      .forEach(el => el.style.bottom = peekOffset + 2 + 'px');
+  } else {
+    const panel = document.getElementById('panel');
+    panel.style.bottom = '';
+    panel.style.transform = '';
+    panel.style.removeProperty('--peek-offset');
+    document.querySelectorAll('.maplibregl-ctrl-bottom-right, .maplibregl-ctrl-bottom-left')
+      .forEach(el => el.style.bottom = '');
+  }
+}
+
+window.addEventListener('resize', applyMobileLayout);
+// Run once after DOM is ready
+document.addEventListener('DOMContentLoaded', applyMobileLayout);
+setTimeout(applyMobileLayout, 0);
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 loadAll();
