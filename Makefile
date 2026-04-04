@@ -55,13 +55,13 @@ docker-serve:
 .PHONY: test
 test:
 	@echo "▶ Running RAPTOR unit tests…"
-	$(PYTHON) tests/test_raptor.py
+	$(PYTHON) -m pytest tests/test_raptor.py -v
 
 # Isochrone output tests — fast point-in-polygon checks against built GeoJSON
 .PHONY: test-iso
 test-iso:
 	@echo "▶ Running isochrone output tests…"
-	$(PYTHON) -m pytest tests/test_isochrones.py -v 2>/dev/null || $(PYTHON) tests/test_isochrones.py
+	$(PYTHON) -m pytest tests/test_isochrones.py -v
 
 .PHONY: test-all
 test-all: test test-iso
