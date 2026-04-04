@@ -983,8 +983,13 @@ function renderHikeStops(hike) {
   const stopRole = {};
   (hike.stops || []).forEach(s => { stopRole[s.dest_id] = s.role; });
 
+  const roleOrder = { start: 0, both: 1, end: 2 };
   const stations = Object.values(stationBest)
-    .sort((a,b) => a.duration_min - b.duration_min || a.name.localeCompare(b.name));
+    .sort((a,b) => {
+      const ra = roleOrder[stopRole[a.id] || 'start'] ?? 1;
+      const rb = roleOrder[stopRole[b.id] || 'start'] ?? 1;
+      return ra - rb || a.duration_min - b.duration_min || a.name.localeCompare(b.name);
+    });
   if (!stations.length) return;
 
   document.getElementById('stop-links')?.remove();
