@@ -3,9 +3,11 @@ scripts/gtfs_common.py
 Shared GTFS feed configuration and download logic for all scripts.
 """
 
+import csv
 import os
 import urllib.request
 import zipfile
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -45,6 +47,92 @@ GTFS_FEEDS = {
 
 GTFS_FILES_NEEDED = ["stops.txt", "stop_times.txt", "trips.txt",
                      "calendar.txt", "calendar_dates.txt", "routes.txt"]
+
+
+def resolve_search_date(region: str) -> str:
+    """
+    Validate the configured search_date for a region against the actual GTFS
+    calendar data. If the date has no active services, find the nearest date
+    with the same weekday that does. Returns the resolved date as 'YYYYMMDD'.
+    """
+    feed = GTFS_FEEDS[region]
+    preferred = feed["search_date"]
+    gtfs_dir  = feed["dir"]
+    cal_path  = gtfs_dir / "calendar.txt"
+    cal_dates_path = gtfs_dir / "calendar_dates.txt"
+
+    preferred_dt = datetime.strptime(preferred, "%Y%m%d")
+    target_weekday = preferred_dt.weekday()  # 0=Mon … 6=Sun
+
+    def active_services_on(dt: datetime) -> set:
+        date_str = dt.strftime("%Y%m%d")
+        day_col = ["monday","tuesday","wednesday","thursday",
+                   "friday","saturday","sunday"][dt.weekday()]
+        active: set = set()
+        if cal_path.exists():
+            with open(cal_path, newline="", encoding="utf-8-sig") as f:
+                for row in csv.DictReader(f):
+                    try:
+                        start = datetime.strptime(row["start_date"], "%Y%m%d")
+                        end   = datetime.strptime(row["end_date"],   "%Y%m%d")
+                        if start <= dt <= end and row.get(day_col, "0") == "1":
+                            active.add(row["service_id"])
+                    except (ValueError, KeyError):
+                        continue
+        if cal_dates_path.exists():
+            with open(cal_dates_path, newline="", encoding="utf-8-sig") as f:
+                for row in csv.DictReader(f):
+                    if row.get("date") == date_str:
+                        active.add(row.get("service_id", ""))
+        return active
+
+    # Fast path: preferred date is fine
+    if active_services_on(preferred_dt):
+        return preferred
+
+    # Collect all dates that appear in calendar.txt or calendar_dates.txt
+    # with the same weekday, then pick the earliest one with active services.
+    candidates: set[datetime] = set()
+
+    if cal_path.exists():
+        with open(cal_path, newline="", encoding="utf-8-sig") as f:
+            for row in csv.DictReader(f):
+                try:
+                    start = datetime.strptime(row["start_date"], "%Y%m%d")
+                    end   = datetime.strptime(row["end_date"],   "%Y%m%d")
+                    # Walk every matching weekday in [start, end]
+                    # Clamp range to avoid huge loops on wide-range feeds
+                    delta = (target_weekday - start.weekday()) % 7
+                    day = start + timedelta(days=delta)
+                    while day <= end:
+                        candidates.add(day)
+                        day += timedelta(weeks=1)
+                except (ValueError, KeyError):
+                    continue
+
+    if cal_dates_path.exists():
+        with open(cal_dates_path, newline="", encoding="utf-8-sig") as f:
+            for row in csv.DictReader(f):
+                try:
+                    dt = datetime.strptime(row["date"], "%Y%m%d")
+                    if dt.weekday() == target_weekday:
+                        candidates.add(dt)
+                except (ValueError, KeyError):
+                    continue
+
+    # Among candidates, find the one closest to preferred_dt (same weekday)
+    # that actually has active services
+    for dt in sorted(candidates, key=lambda d: abs((d - preferred_dt).days)):
+        if active_services_on(dt):
+            resolved = dt.strftime("%Y%m%d")
+            print(f"  ⚠  {region}: search_date {preferred} has no active services "
+                  f"→ using {resolved} instead")
+            return resolved
+
+    # Nothing found — return original and let the loader surface the error
+    print(f"  ⚠  {region}: could not find any active date with weekday "
+          f"{preferred_dt.strftime('%A')} in GTFS calendar, keeping {preferred}")
+    return preferred
 
 
 def ensure_gtfs(region: str) -> bool:

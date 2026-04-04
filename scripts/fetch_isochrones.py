@@ -30,7 +30,7 @@ except ImportError:
     print("ERROR: shapely not installed. Run: pip install shapely")
     sys.exit(1)
 
-from gtfs_common import GTFS_FEEDS, GTFS_DIR, GTFS_FILES_NEEDED, ensure_gtfs
+from gtfs_common import GTFS_FEEDS, GTFS_DIR, GTFS_FILES_NEEDED, ensure_gtfs, resolve_search_date
 
 # ── Config ────────────────────────────────────────────────────────────────────
 ROOT             = Path(__file__).parent.parent
@@ -71,7 +71,7 @@ class GTFSData:
 
     def __init__(self, region: str):
         d = GTFS_FEEDS[region]["dir"]
-        self.search_date = GTFS_FEEDS[region]["search_date"]
+        self.search_date = resolve_search_date(region)
 
         print(f"  Loading {region} stops…", end=" ", flush=True)
         self.stops = self._load_stops(d / "stops.txt")
@@ -637,9 +637,6 @@ def main():
 
     # ── Phase 3: Load all available feeds into one merged graph ────────────────
     print(f"\n▶ Loading GTFS feeds:")
-    for r in sorted(needed_regions):
-        if r in GTFS_FEEDS:
-            print(f"  {r}: search_date={GTFS_FEEDS[r]['search_date']}")
     region_objects = {}
     for region in sorted(needed_regions):
         if region not in GTFS_FEEDS:
@@ -650,6 +647,7 @@ def main():
             continue
         print(f"  Indexing {region}…")
         region_objects[region] = GTFSData(region)
+        print(f"  {region}: search_date={region_objects[region].search_date}")
 
     if not region_objects:
         print("ERROR: No GTFS data available.")

@@ -32,7 +32,7 @@ GPX_STATS_JSON   = ROOT / "docs" / "gpx_stats.json"
 OUTPUT_CSV       = ROOT / "docs" / "destinations.csv"
 HIKES_JSON       = ROOT / "docs" / "hikes.json"
 
-MAX_SNAP_DIST_KM = 4.0    # ignore stops further than this (likely wrong region)
+MAX_SNAP_DIST_KM = 3.0    # ignore stops further than this (likely wrong region)
 RAIL_PREFER_KM   = 0.25   # prefer a rail stop within this distance over nearest bus stop
 
 
@@ -169,7 +169,13 @@ def load_stop_route_types(region) -> dict:
 
 
 def load_stops(region):
-    """Load stops.txt for a region, return list of dicts with route_types."""
+    """Load stops.txt for a region, return list of dicts with route_types.
+
+    Platform children that share a parent_station are collapsed into one
+    canonical stop (the parent's ID, averaged coordinates, shared name).
+    This prevents the same physical station from appearing multiple times
+    in destinations.csv just because it has several platforms.
+    """
     stops_file = GTFS_FEEDS[region]["dir"] / "stops.txt"
     if not stops_file.exists():
         print(f"  ✗ stops.txt not found for {region} at {stops_file}")
@@ -179,27 +185,50 @@ def load_stops(region):
     stop_types = load_stop_route_types(region)
     print(f"{len(stop_types):,} typed")
 
-    stops = []
+    # First pass: read all rows, track parent_station field
+    raw_rows = []
     with open(stops_file, newline="", encoding="utf-8-sig") as f:
         for row in csv.DictReader(f):
             try:
-                types = stop_types.get(row["stop_id"], set())
                 sid = row["stop_id"]
-                # Skip parent stations — they have averaged coordinates and
-                # no trips directly; child platform stops are used instead
                 if sid.startswith("Parent") or sid.startswith("parent"):
                     continue
-                stops.append({
-                    "id":          sid,
-                    "name":        row["stop_name"],
-                    "lat":         float(row["stop_lat"]),
-                    "lon":         float(row["stop_lon"]),
-                    "region":      region,
-                    "has_rail":    bool(types & RAIL_ROUTE_TYPES),
+                raw_rows.append({
+                    "id":            sid,
+                    "name":          row["stop_name"],
+                    "lat":           float(row["stop_lat"]),
+                    "lon":           float(row["stop_lon"]),
+                    "parent":        row.get("parent_station", "").strip(),
+                    "region":        region,
+                    "route_types":   stop_types.get(sid, set()),
                 })
             except (KeyError, ValueError):
                 continue
-    print(f"  ✓ Loaded {len(stops):,} stops for {region}")
+
+    # Second pass: collapse children that share a parent_station
+    # Key: parent_station ID if set, else the stop's own ID
+    groups: dict[str, list] = {}
+    for r in raw_rows:
+        key = r["parent"] if r["parent"] else r["id"]
+        groups.setdefault(key, []).append(r)
+
+    stops = []
+    for canonical_id, members in groups.items():
+        avg_lat = sum(m["lat"] for m in members) / len(members)
+        avg_lon = sum(m["lon"] for m in members) / len(members)
+        name    = members[0]["name"]   # all children share the same name
+        types   = set().union(*(m["route_types"] for m in members))
+        stops.append({
+            "id":       canonical_id,
+            "name":     name,
+            "lat":      avg_lat,
+            "lon":      avg_lon,
+            "region":   region,
+            "has_rail": bool(types & RAIL_ROUTE_TYPES),
+        })
+
+    print(f"  ✓ Loaded {len(stops):,} stops for {region} "
+          f"(collapsed from {len(raw_rows):,} platforms)")
     return stops
 
 

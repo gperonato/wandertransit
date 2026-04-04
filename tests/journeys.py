@@ -12,7 +12,7 @@
 JOURNEYS = [
     {
         "description": "Zuerich HB to Airolo",
-        "stop_id":     "airolo_8505201",  # check manifest.json
+        "stop_id":     "airolo_parent8505201",  # check manifest.json
         "origin_lat":  47.3782,   # Zürich HB
         "origin_lon":  8.5403,
         "expected_band": 120,     # 119 min → 120-min band
@@ -39,11 +39,20 @@ JOURNEYS = [
     },
     {
         "description": "Lausanne to Miex, Le Flon",
-        "stop_id":     "miex-le-flon_8501737010000",  # check manifest.json
+        "stop_id":     "miex-le-flon_parent8501737",  # check manifest.json
         "origin_lat":  46.5197,    # Lausanne
         "origin_lon":  6.6323,
         "expected_band": 120,     # 97 min → 120-min band
         "source": "SBB.ch",
+        "debug": True,
+    },
+    {
+        "description": "Freilassing (Bayern) to Salzburg Ludwig-Schmederer-Platz",
+        "stop_id":     "salzburg-ludwig-schmederer-platz_at455086601",  # check manifest.json
+        "origin_lat":  47.836975,   # Freilassing
+        "origin_lon":  12.976570,
+        "expected_band": 60,     # 31 min → 60-min band
+        "source": "oebb.at",
         "debug": True,
     }
 ]
